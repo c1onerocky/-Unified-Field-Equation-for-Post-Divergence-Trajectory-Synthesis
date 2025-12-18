@@ -5,13 +5,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-# 1. Setup Time and Parameters
+# 1. setup time perimeters
+
 t = np.linspace(0, 20, 200)  # Extended time for orbital feel
 td = 10  # Divergence at mid-point
 alpha = [0.4, 0.3, 0.3]  # Adjusted weights
 
-# 2. Pre-Divergence Path (Elliptical orbit around 'sun')
-# Simple Keplerian orbit approximation
+# 2.  Simple Keplerian orbit approximation
 
 a = 5.0  # semi-major axis
 e = 0.1  # eccentricity
