@@ -2,128 +2,119 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-# 1. Setup Time and Parameters
-t = np.linspace(0, 10, 100)
-td = 5  
-alpha = [0.5, 0.3, 0.2] 
+# Parameters - tuned for clarity
+t = np.linspace(0, 20, 400)
+td = 8.0
+num_branches = 40  # Much more readable
+np.random.seed(42)
+alphas = np.random.dirichlet(np.ones(num_branches))  # Some branches dominate
 
-# 2. Pre-Divergence (Position + Rotation)
-x0, y0, z0 = 0.5 * t**2, 0.2 * t, t * 10
-# Initial orientation: mostly stable
-roll0, pitch0, yaw0 = 0.1 * t, 0.05 * t, 0.02 * t
-
-# 3. Post-Divergence Complex Synthesis
-def generate_complex_physics(t, td, x0, y0, z0):
-    mask = t >= td
-    post_td = t[mask] - td
-    branches = []
-    
-    for i in range(len(alpha)):
-        # Translational Branches (Real + Imaginary i)
-        xi = x0[mask] + (i * post_td**1.5)
-        yi = y0[mask] + (np.sin(i * post_td) * 2)
-        zi = z0[mask] + (1 * post_td)
-        im_pos = np.exp(0.4 * post_td) * (i + 1) # Position Tendency
-        
-        # Rotational Branches (Theta_i_complex)
-        # Real = Actual tilt, Imaginary = The "Wobble" phase
-        roll_i = roll0[mask] + (0.2 * i * post_td)
-        im_roll = np.sin(post_td * (i+1)) * post_td # The complex "wobble"
-        
-        branches.append({
-            'pos': (xi, yi, zi, im_pos),
-            'rot': (roll_i, im_roll)
-        })
-    return branches
-
-branches = generate_complex_physics(t, td, x0, y0, z0)
-
-# 4. Visualization
-fig = plt.figure(figsize=(14, 7))
-
-
-
-# Subplot 1: 3D Trajectory
-ax1 = fig.add_subplot(121, projection='3d')
-ax1.plot(x0[t<td], y0[t<td], z0[t<td], 'k--', label="Stable Entry")
-colors = ['magento', 'cyan', 'orange']
-
-for i, b in enumerate(branches):
-    xi, yi, zi, im = b['pos']
-    ax1.plot(xi, yi, zi, color=colors[i%3], label=f"Branch {i+1}")
-    ax1.scatter(xi, yi, zi, s=im*5, color=colors[i%3], alpha=0.05) # Uncertainty aura
-
-ax1.set_title("Complex Trajectory (Real + Imaginary)")
-ax1.legend()
-
-# Subplot 2: Rotational Instability (The "Wobble")
-ax2 = fig.add_subplot(122)
-for i, b in enumerate(branches):
-    real_roll, im_roll = b['rot']
-    ax2.plot(t[t>=td], real_roll, color=colors[i%3], linestyle='-', label=f"Real Roll {i+1}")
-    ax2.fill_between(t[t>=td], real_roll - im_roll, real_roll + im_roll, color=colors[i%3], alpha=0.2)
-
-ax2.set_title("Rotational Divergence (Imaginary Phase Shading)")
-ax2.set_xlabel("Time (s)")
-ax2.set_ylabel("Roll Angle (Radians)")
-plt.tight_layout()
-plt.show()
-
-
-
-​Unified Field Equation for Post-Divergence Trajectory Synthesis
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
-# 1. setup time perimeters
-
-t = np.linspace(0, 20, 200)  # Extended time for orbital feel
-td = 10  # Divergence at mid-point
-alpha = [0.4, 0.3, 0.3]  # Adjusted weights
-
-# 2.  Simple Keplerian orbit approximation
-
-a = 5.0  # semi-major axis
-e = 0.1  # eccentricity
-omega = 2 * np.pi / 10  # orbital frequency (period 10 units)
+# Pre-divergence orbit
+a, e = 6.0, 0.3
+omega = 2 * np.pi / 12
 x0 = a * (np.cos(omega * t) - e)
 y0 = a * np.sqrt(1 - e**2) * np.sin(omega * t)
-z0 = 0.1 * np.sin(2 * omega * t)  # Small z for 3D
+z0 = 0.5 * np.sin(0.5 * omega * t)
 
-# Pre-divergence orientation (stable spin)
+# Orientation
 roll0 = 0.05 * t
 pitch0 = 0.02 * t
 yaw0 = 0.01 * t
 
-# 3. Post-Divergence Complex Branches with Barycenter-like perturbations
-def generate_branches(t, td, x0, y0, z0, roll0, pitch0, yaw0):
-    mask = t >= td
-    post_td = t[mask] - td
-    branches = []
+mask_pre = t < td
+mask_post = t >= td
+post_t = t[mask_post] - td
+div_idx = np.where(mask_post)[0][0]
+P_d = np.array([x0[div_idx], y0[div_idx], z0[div_idx]])
+theta_d = np.array([roll0[div_idx], pitch0[div_idx], yaw0[div_idx]]) + 1.0
+
+# Generate clearer branches
+branches = []
+for i in range(num_branches):
+    alpha = alphas[i]
+    pert = 0.04 * np.random.randn(3)
+    div_factor = np.exp(0.3 * post_t)  # Slower divergence = more structure visible
     
-    for i in range(len(alpha)):
-        # Translational: Base + chaotic perturbation (e.g., Jupiter-like pull)
-        perturb = 0.5 * (i + 1) * np.sin(0.5 * post_td + i)  # Sinusoidal divergence
-        xi = x0[mask] + perturb * post_td**0.5  # Square root growth for diffusion-like
-        yi = y0[mask] + perturb * np.cos(post_td)
-        zi = z0[mask] + 0.2 * i * post_td
-        
-        # Imaginary tendency: Exponential sensitivity
-        im_pos = np.exp(0.3 * post_td) * (i + 1)
-        
-        # Rotational: Real + imaginary wobble
-        roll_i = roll0[mask] + 0.1 * i * post_td
-        im_roll = np.sin(post_td * (i+1)) * (post_td * 0.05)  # Bounded growth
-        
-        # Similarly for pitch and yaw
-        pitch_i = pitch0[mask] + 0.05 * i * post_td
-        im_pitch = np.cos(post_td * (i+1)) * (post_td * 0.05)
-        yaw_i = yaw0[mask] + 0.03 * i * post_td
-        im_yaw = np.sin(1.5 * post_td * (i+1)) * (post_td * 0.05)
-        
-        branches.append({
-            'pos': (xi, yi, zi, im_pos),
-     
+    X_i = pert[0] * div_factor + 1.2 * np.sin(post_t * 0.8 + i * 0.2)
+    Y_i = pert[1] * div_factor + 0.8 * np.cos(post_t * 1.1 + i)
+    Z_i = pert[2] * div_factor + 0.4 * (-1)**i * post_t**0.6
+    
+    V_complex = np.array([
+        X_i + 1j * (-Y_i),
+        Y_i + 1j * (-X_i),
+        Z_i + 1j * Z_i
+    ])
+    
+    roll_i = 0.06 * post_t
+    pitch_i = 0.04 * post_t
+    yaw_i = 0.02 * post_t
+    delta_roll = 0.3 * np.sin(1.5 * post_t)
+    delta_pitch = 0.25 * np.cos(post_t)
+    delta_yaw = 0.2 * np.sin(2 * post_t)
+    
+    Theta_complex = np.array([
+        roll_i + 1j * delta_roll,
+        pitch_i + 1j * delta_pitch,
+        yaw_i + 1j * delta_yaw
+    ])
+    
+    im_rad = 8 * div_factor * alpha
+    branches.append((V_complex, Theta_complex, im_rad, alpha))
+
+# Superposition
+S_c = np.zeros((3, len(post_t)), dtype=complex)
+epsilon = 0.5
+for V_c, Theta_c, _, alpha in branches:
+    for comp in range(3):
+        num = P_d[comp] + V_c[comp]
+        den = theta_d[comp] + Theta_c[comp] + epsilon
+        S_c[comp] += alpha * (num / den)
+
+pos_super = np.real(S_c)
+im_super = np.abs(np.imag(S_c)).mean(axis=0)  # Average latent divergence
+
+# Plotting
+fig = plt.figure(figsize=(14, 9))
+fig.patch.set_facecolor('black')
+ax = fig.add_subplot(111, projection='3d')
+ax.xaxis.set_pane_color((0,0,0,1))
+ax.yaxis.set_pane_color((0,0,0,1))
+ax.zaxis.set_pane_color((0,0,0,1))
+
+# Pre-divergence
+ax.plot(x0[mask_pre], y0[mask_pre], z0[mask_pre], 'w--', linewidth=4, label="Stable Pre-Divergence Orbit")
+
+# Branches - colored by probability (hot = likely)
+cmap = plt.cm.hot_r  # Red = high alpha, black = low
+for idx, (V_c, _, im_rad, alpha) in enumerate(branches):
+    xi = P_d[0] + np.real(V_c[0])
+    yi = P_d[1] + np.real(V_c[1])
+    zi = P_d[2] + np.real(V_c[2])
+    color = cmap(alpha**0.5)  # Exaggerate high-prob branches
+    lw = 0.5 + 4 * alpha
+    alphaline = 0.3 + 0.7 * alpha
+    ax.plot(xi, yi, zi, color=color, linewidth=lw, alpha=alphaline)
+
+# Superposed path - bright magenta with uncertainty envelope
+ax.plot(pos_super[0], pos_super[1], pos_super[2], 'm-', linewidth=6, label="Most Probable Path (Re(S_c))", alpha=0.9)
+
+# Optional: faint envelope from imaginary part
+envelope_alpha = 0.15
+ax.plot(pos_super[0] + im_super*2, pos_super[1], pos_super[2], 'm-', alpha=envelope_alpha)
+ax.plot(pos_super[0] - im_super*2, pos_super[1], pos_super[2], 'm-', alpha=envelope_alpha)
+ax.plot(pos_super[0], pos_super[1] + im_super*2, pos_super[2], 'm-', alpha=envelope_alpha)
+ax.plot(pos_super[0], pos_super[1] - im_super*2, pos_super[2], 'm-', alpha=envelope_alpha)
+
+ax.set_xlim(-8, 12)
+ax.set_ylim(-8, 12)
+ax.set_zlim(-4, 8)
+ax.set_xlabel('X', color='white')
+ax.set_ylabel('Y', color='white')
+ax.set_zlabel('Z', color='white')
+ax.set_title('Post-Divergence Trajectory Synthesis\n(Probabilistically Weighted Branches)', color='white', fontsize=16)
+ax.legend(facecolor='black', labelcolor='white', loc='upper left')
+ax.grid(True, color='gray', alpha=0.3)
+ax.view_init(elev=28, azim=-70)
+
+plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+plt.show()
