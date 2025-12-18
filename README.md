@@ -12,6 +12,7 @@ alpha = [0.4, 0.3, 0.3]  # Adjusted weights
 
 # 2. Pre-Divergence Path (Elliptical orbit around 'sun')
 # Simple Keplerian orbit approximation
+
 a = 5.0  # semi-major axis
 e = 0.1  # eccentricity
 omega = 2 * np.pi / 10  # orbital frequency (period 10 units)
