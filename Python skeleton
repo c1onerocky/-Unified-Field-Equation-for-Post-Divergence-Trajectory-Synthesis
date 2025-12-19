@@ -1,0 +1,58 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Load weather data (e.g., NOAA hurricane track: time, lat, lon, wind_speed)
+data = pd.read_csv('weather_system_data.csv')
+t = data['time'].values
+post_t = t - t[0]
+
+num_branches = 50
+np.random.seed(42)
+alphas = np.random.dirichlet(np.ones(num_branches))
+
+P_d = data[['lat', 'lon', 'wind']].iloc[0].values  # Wind as "alt" analog
+
+S_c = np.zeros((3, len(t)), dtype=complex)
+epsilon = 1.0
+
+for i in range(num_branches):
+    alpha = alphas[i]
+    pert = 0.1 * np.random.randn(3)  # Weather perts (model noise)
+    
+    lat_i = data['lat'].values + pert[0] * (1 + 0.05 * post_t)
+    lon_i = data['lon'].values + pert[1] * (1 + 0.05 * post_t)
+    wind_i = data['wind'].values + pert[2] * (1 + 0.05 * post_t)
+    
+    V_complex = np.array([
+        lat_i + 1j * (-0.2 * lon_i),
+        lon_i + 1j * (-0.2 * lat_i),
+        wind_i + 1j * (0.15 * np.sin(0.1 * post_t))  # Intensity divergence
+    ])
+    
+    # "Tumble" for system evolution (e.g., at forecast divergence)
+    tumble = np.where(post_t >= 12, 1.0, 0.0)  # Divergence at uncertainty point
+    roll = 0.01 * post_t + 0.08 * np.sin(0.4 * post_t) * tumble  # Front wobble
+    pitch = 0.015 * post_t + 0.1 * np.cos(0.5 * post_t) * tumble
+    yaw = 0.005 * post_t + 0.15 * np.sin(0.6 * post_t) * tumble
+    
+    Theta_complex = np.array([
+        roll + 1j * 0.02 * np.sin(0.3 * post_t),
+        pitch + 1j * 0.02 * np.cos(0.4 * post_t),
+        yaw + 1j * 0.02 * np.sin(0.5 * post_t)
+    ])
+    
+    num = P_d[:, np.newaxis] + V_complex
+    den = theta_d[:, np.newaxis] + Theta_complex + epsilon
+    S_c += alpha * (num / den)
+
+pos_super = np.real(S_c)
+
+# Plot (2D for storm tracks)
+fig, ax = plt.subplots(figsize=(12,8))
+ax.plot(pos_super[1], pos_super[0], 'b-', lw=3, label='Superposed Track')
+ax.set_xlabel('Lon')
+ax.set_ylabel('Lat')
+ax.legend()
+plt.savefig('weather_superposition.png')
+print("Saved 'weather_superposition.png'")
