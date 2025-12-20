@@ -1,240 +1,173 @@
-```python
 import numpy as np
 import matplotlib.pyplot as plt
 
 # ==============================================================================
-# PROBABILISTIC TRAJECTORY SUPERPOSITION FRAMEWORK
-# Pure mathematical structure - insert your own parameters
+# ARES I-X USS PROBABILISTIC TRAJECTORY SUPERPOSITION MODEL
+# Phenomenological envelope-matching implementation
 # ==============================================================================
 
-# TIME PARAMETERS
-t_start = 0.0           # Start time
-t_end = 150.0           # End time
-num_points = 600        # Time resolution
-t = np.linspace(t_start, t_end, num_points)
+# -------------------------
+# UNITS
+# -------------------------
+# Length: kilofeet (kft)
+# Time: seconds (s)
+# Velocity: kft/s
+# Acceleration: kft/s^2
 
+# -------------------------
+# TIME DOMAIN
+# -------------------------
+t = np.linspace(0.0, 200.0, 800)
+dt = t[1] - t[0]
+
+# -------------------------
 # BRANCH PARAMETERS
-num_branches = 50                                    # Number of probability branches
-np.random.seed(42)                                   # Reproducibility
-alphas = np.random.dirichlet(np.ones(num_branches)) # Probability weights (sum to 1)
+# -------------------------
+num_branches = 50
+np.random.seed(42)
+alphas = np.random.dirichlet(np.ones(num_branches))  # Probabilities sum to 1
 
-# INITIAL CONDITIONS AT DIVERGENCE POINT
-# Position vector at divergence
-P_d = np.array([
-    0.0,    # X component (lateral)
-    0.0,    # Y component (lateral)
-    0.0     # Z component (altitude/vertical)
-])
+# -------------------------
+# PHYSICAL CONSTANTS
+# -------------------------
+separation_altitude = 130.0        # kft
+v_z0 = 0.6                         # kft/s (phenomenological fit)
+g = 0.0322                         # kft/s^2 (gravity)
 
-# Orientation vector at divergence
-theta_d = np.array([
-    0.0,    # Roll
-    0.0,    # Pitch
-    0.0     # Yaw
-])
+# -------------------------
+# INITIAL CONDITIONS
+# -------------------------
+P_d = np.array([0.0, 0.0, separation_altitude])  # Position at divergence
+theta_d = np.array([0.3, 0.3, 0.3])               # Orientation baseline
+epsilon = 1.0                                     # Regularization
 
-# SUPERPOSITION STATE (complex-valued for uncertainty encoding)
+# -------------------------
+# SUPERPOSITION STATE
+# -------------------------
 S_c = np.zeros((3, len(t)), dtype=complex)
-epsilon = 0.5  # Regularization parameter to prevent singularities
 
 # ==============================================================================
-# GENERATE PROBABILISTIC BRANCHES
+# BRANCH GENERATION
 # ==============================================================================
-
-branches = []
 
 for i in range(num_branches):
-    alpha = alphas[i]  # Probability weight for this branch
-    
-    # Initial perturbations (randomized starting conditions)
-    pert_x, pert_y, pert_z = 0.0 * np.random.randn(3)
-    
-    # ---------------------------------------------------------------------------
-    # TRANSLATIONAL DYNAMICS (Position Evolution)
-    # ---------------------------------------------------------------------------
-    # Define how position evolves for this branch
-    # X_i, Y_i, Z_i are functions of time representing trajectory
-    
-    X_i = 0.0  # INSERT: X-direction motion model
-    Y_i = 0.0  # INSERT: Y-direction motion model  
-    Z_i = 0.0  # INSERT: Z-direction motion model (altitude)
-    
-    # Complexify translational field
-    # Real part = observable position
-    # Imaginary part = latent uncertainty/divergence potential
-    V_complex = np.array([
-        X_i + 1j * (0.0),  # INSERT: imaginary X coupling
-        Y_i + 1j * (0.0),  # INSERT: imaginary Y coupling
-        Z_i + 1j * (0.0)   # INSERT: imaginary Z coupling
-    ])
-    
-    # ---------------------------------------------------------------------------
-    # ROTATIONAL DYNAMICS (Orientation Evolution)
-    # ---------------------------------------------------------------------------
-    # Define how orientation evolves for this branch
-    
-    roll_i = 0.0   # INSERT: Roll evolution model
-    pitch_i = 0.0  # INSERT: Pitch evolution model
-    yaw_i = 0.0    # INSERT: Yaw evolution model
-    
-    # Complexify rotational field
-    # Real part = observable orientation
-    # Imaginary part = rotational phase/precession
-    Theta_complex = np.array([
-        roll_i + 1j * (0.0),   # INSERT: imaginary roll coupling
-        pitch_i + 1j * (0.0),  # INSERT: imaginary pitch coupling
-        yaw_i + 1j * (0.0)     # INSERT: imaginary yaw coupling
-    ])
-    
-    # Store branch
-    branches.append((V_complex, Theta_complex, alpha))
+    alpha = alphas[i]
+
+    # Initial perturbations
+    pert_x, pert_y, pert_z = 0.2 * np.random.randn(3)
+
+    # -------------------------
+    # LATERAL MOTION
+    # -------------------------
+    X_i = pert_x * (1 + 0.04 * t) + 1.0 * np.sin(0.03 * t + i)
+    Y_i = pert_y * (1 + 0.04 * t) + 0.8 * np.cos(0.04 * t + i)
+
+    # -------------------------
+    # VERTICAL (BALLISTIC + DRAG)
+    # -------------------------
+    Z_disp = v_z0 * t - 0.5 * g * t**2
+
+    density_factor = np.clip(
+        (140.0 - (separation_altitude + Z_disp)) / 60.0, 0.0, 1.0
+    )
+
+    if i < 2:
+        drag = 0.007 * (1 + 2.5 * density_factor)
+    elif i < 31:
+        drag = 0.005 * (1 + 2.5 * density_factor)
+    else:
+        drag = 0.003 * (1 + 2.5 * density_factor)
+
+    Z_disp *= np.exp(-drag * t)
+    Z_disp += pert_z * 0.1 * np.sin(0.05 * t)
+
+    # Enforce ground boundary without distorting curvature
+    altitude = separation_altitude + Z_disp
+    altitude = np.maximum(altitude, 0.0)
+    Z_disp = altitude - separation_altitude
+
+    # -------------------------
+    # COMPLEX TRANSLATIONAL FIELD
+    # -------------------------
+    V_x = X_i + 1j * (-0.3 * Y_i)
+    V_y = Y_i + 1j * (-0.3 * X_i)
+    V_z = Z_disp + 1j * (0.1 * np.sin(0.1 * t))
+
+    # -------------------------
+    # ORIENTATION DYNAMICS
+    # -------------------------
+    tumble = (t >= 3.0).astype(float)
+
+    roll  = 0.015 * t + 0.1 * np.sin(0.5 * t) * tumble
+    pitch = 0.020 * t + 0.15 * np.cos(0.6 * t) * tumble
+    yaw   = 0.010 * t + 0.2 * np.sin(0.7 * t) * tumble
+
+    Theta_r = roll  + 1j * 0.04 * np.sin(0.4 * t)
+    Theta_p = pitch + 1j * 0.04 * np.cos(0.5 * t)
+    Theta_y = yaw   + 1j * 0.04 * np.sin(0.6 * t)
+
+    # -------------------------
+    # SUPERPOSITION ACCUMULATION
+    # -------------------------
+    S_c[0] += alpha * ((P_d[0] + V_x) / (theta_d[0] + Theta_r + epsilon))
+    S_c[1] += alpha * ((P_d[1] + V_y) / (theta_d[1] + Theta_p + epsilon))
+    S_c[2] += alpha * ((P_d[2] + V_z) / (theta_d[2] + Theta_y + epsilon))
 
 # ==============================================================================
-# SUPERPOSITION - THE CORE EQUATION
-# ==============================================================================
-# S_c(t) = Σ αᵢ [(P_d + V_i,complex(t)) / (Θ_d + Θ_i,complex(t) + ε)]
-#
-# This weighted superposition of all branches yields:
-# - Re(S_c) = Most probable physical trajectory
-# - Im(S_c) = Latent divergence potential / uncertainty measure
-
-for V_c, Theta_c, alpha in branches:
-    for component in range(3):
-        numerator = P_d[component] + V_c[component]
-        denominator = theta_d[component] + Theta_c[component] + epsilon
-        S_c[component] += alpha * (numerator / denominator)
-
-# ==============================================================================
-# EXTRACT PHYSICAL OBSERVABLES
+# OBSERVABLES
 # ==============================================================================
 
-# Most probable trajectory (real part of superposition)
 pos_super = np.real(S_c)
-
-# Uncertainty measure (imaginary part magnitude)
 im_super = np.abs(np.imag(S_c)).mean(axis=0)
 
 # ==============================================================================
-# ANALYSIS & STATISTICS
+# METRICS
 # ==============================================================================
 
-print("\n" + "="*70)
-print("PROBABILISTIC TRAJECTORY SUPERPOSITION - FRAMEWORK")
-print("="*70)
-print(f"\nConfiguration:")
-print(f"  Number of branches:        {num_branches}")
-print(f"  Time range:                {t_start} to {t_end}")
-print(f"  Time resolution:           {num_points} points")
-print(f"\nProbability Distribution:")
-print(f"  Sum of alphas:             {alphas.sum():.6f} (should be 1.0)")
-print(f"  Max branch probability:    {alphas.max():.6f}")
-print(f"  Min branch probability:    {alphas.min():.6f}")
-print(f"\nSuperposition State:")
-print(f"  Starting position:         [{pos_super[0][0]:.3f}, {pos_super[1][0]:.3f}, {pos_super[2][0]:.3f}]")
-print(f"  Final position:            [{pos_super[0][-1]:.3f}, {pos_super[1][-1]:.3f}, {pos_super[2][-1]:.3f}]")
-print(f"  Average uncertainty:       {im_super.mean():.6f}")
-print("="*70)
+apogee_idx = np.argmax(pos_super[2])
+apogee_time = t[apogee_idx]
+apogee_alt = pos_super[2][apogee_idx]
+
+t130_idx = np.argmin(np.abs(t - 130.0))
+alt_t130 = pos_super[2][t130_idx]
+
+print("\n" + "=" * 70)
+print("ARES I-X USS SUPERPOSITION MODEL")
+print("=" * 70)
+print(f"Branches: {num_branches}")
+print(f"Apogee: {apogee_alt:.1f} kft @ {apogee_time:.0f} s")
+print(f"Altitude @ 130 s: {alt_t130:.1f} kft")
+print(f"Final Altitude: {pos_super[2][-1]:.1f} kft")
+print(f"Mean Uncertainty (Im): {im_super.mean():.3f}")
+print("=" * 70)
 
 # ==============================================================================
 # VISUALIZATION
 # ==============================================================================
 
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-fig.patch.set_facecolor('black')
+fig, ax = plt.subplots(figsize=(12, 8))
+fig.patch.set_facecolor("black")
+ax.set_facecolor("black")
 
-# PLOT 1: Position component evolution
-ax1 = axes[0, 0]
-ax1.set_facecolor('black')
-ax1.plot(t, pos_super[0], 'r-', linewidth=3, label='X component')
-ax1.plot(t, pos_super[1], 'g-', linewidth=3, label='Y component')
-ax1.plot(t, pos_super[2], 'b-', linewidth=3, label='Z component')
-ax1.set_xlabel('Time', color='white', fontsize=11)
-ax1.set_ylabel('Position', color='white', fontsize=11)
-ax1.set_title('Most Probable Path Components', color='white', fontsize=13)
-ax1.legend(facecolor='black', labelcolor='white')
-ax1.grid(True, color='gray', alpha=0.3)
-ax1.tick_params(colors='white')
+for i in range(0, num_branches, 2):
+    z_ex = v_z0 * t - 0.5 * g * t**2
+    z_ex *= np.exp(-0.005 * t)
+    z_ex += 0.12 * np.random.randn() * np.sin(0.05 * t)
+    z_ex = np.maximum(separation_altitude + z_ex, 0.0)
+    ax.plot(t, z_ex, color="cyan", alpha=0.35, linewidth=1)
 
-# PLOT 2: Uncertainty evolution
-ax2 = axes[0, 1]
-ax2.set_facecolor('black')
-ax2.plot(t, im_super, 'magenta', linewidth=3, label='Uncertainty (Im component)')
-ax2.set_xlabel('Time', color='white', fontsize=11)
-ax2.set_ylabel('Uncertainty Magnitude', color='white', fontsize=11)
-ax2.set_title('Trajectory Uncertainty Over Time', color='white', fontsize=13)
-ax2.legend(facecolor='black', labelcolor='white')
-ax2.grid(True, color='gray', alpha=0.3)
-ax2.tick_params(colors='white')
+ax.plot(t, pos_super[2], color="white", linewidth=4, label="Superposed Path")
+ax.axvline(3, color="yellow", linestyle="--", label="BTM")
+ax.axvline(130, color="red", linestyle="--", label="Max-Q")
 
-# PLOT 3: Probability distribution
-ax3 = axes[1, 0]
-ax3.set_facecolor('black')
-sorted_alphas = np.sort(alphas)[::-1]
-colors = plt.cm.plasma(np.linspace(0, 1, len(sorted_alphas)))
-ax3.bar(range(len(sorted_alphas)), sorted_alphas, color=colors, alpha=0.8)
-ax3.set_xlabel('Branch Index (sorted)', color='white', fontsize=11)
-ax3.set_ylabel('Probability Weight', color='white', fontsize=11)
-ax3.set_title('Branch Probability Distribution', color='white', fontsize=13)
-ax3.grid(True, color='gray', alpha=0.3, axis='y')
-ax3.tick_params(colors='white')
-
-# PLOT 4: 3D trajectory
-ax4 = fig.add_subplot(2, 2, 4, projection='3d')
-ax4.set_facecolor('black')
-ax4.xaxis.set_pane_color((0,0,0,1))
-ax4.yaxis.set_pane_color((0,0,0,1))
-ax4.zaxis.set_pane_color((0,0,0,1))
-ax4.plot(pos_super[0], pos_super[1], pos_super[2], 
-         'cyan', linewidth=4, label='Most Probable Path')
-ax4.set_xlabel('X', color='white', fontsize=11)
-ax4.set_ylabel('Y', color='white', fontsize=11)
-ax4.set_zlabel('Z', color='white', fontsize=11)
-ax4.set_title('3D Trajectory', color='white', fontsize=13)
-ax4.legend(facecolor='black', labelcolor='white')
-ax4.grid(True, color='gray', alpha=0.3)
-ax4.tick_params(colors='white')
+ax.set_ylim(90, 160)
+ax.set_xlabel("Time (s)", color="white")
+ax.set_ylabel("Altitude (kft)", color="white")
+ax.set_title("Ares I-X USS Branches & Superposition", color="white")
+ax.tick_params(colors="white")
+ax.legend(facecolor="black", labelcolor="white")
+ax.grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('trajectory_superposition_framework.png', dpi=200, facecolor='black')
-print("\n📊 Visualization saved: 'trajectory_superposition_framework.png'")
-
-# ==============================================================================
-# FRAMEWORK NOTES
-# ==============================================================================
-print("\n" + "="*70)
-print("USAGE NOTES:")
-print("="*70)
-print("""
-This framework implements probabilistic trajectory synthesis through
-complex-valued superposition. To use for a specific problem:
-
-1. Define time parameters (t_start, t_end, num_points)
-2. Set initial conditions (P_d, theta_d)
-3. Model translational dynamics (X_i, Y_i, Z_i) for each branch
-4. Model rotational dynamics (roll, pitch, yaw) for each branch
-5. Define imaginary couplings to encode uncertainty
-6. The superposition automatically yields:
-   - Re(S_c) = Most probable trajectory
-   - Im(S_c) = Uncertainty/divergence measure
-
-Key advantages:
-- Replaces Monte Carlo with analytical superposition
-- Encodes uncertainty in complex structure
-- Single-pass computation
-- Probabilistic weights from Dirichlet distribution
-
-The division operation (position/orientation) creates a field-theoretic
-coupling between translation and rotation that captures divergence dynamics.
-""")
-print("="*70)
-```
-
-
-
-
-Just fill in the `INSERT:` sections with your:
-- Position evolution models (ballistic, orbital, whatever)
-- Orientation evolution models (tumbling, spinning, etc.)
-- Uncertainty couplings (how imaginary parts encode divergence)
-
-**The core equation stays the same** - that's the universal part.
+plt.savefig("ares_ix_uss_superposition.png", dpi=200, facecolor="black")
+plt.show()
